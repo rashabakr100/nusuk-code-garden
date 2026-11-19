@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Check, Copy, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { SignInMark } from "@/components/sign-in-mark";
 import {
   COPY_COOLDOWN_MS,
   canTapToCopy,
@@ -135,6 +136,7 @@ function Index() {
 
   return (
     <main className="min-h-screen bg-background pattern-bg">
+      <SignInMark />
       <div className="mx-auto max-w-xl px-4 py-10">
         <header className="text-center">
           <p className="font-display text-sm tracking-[0.3em] text-primary uppercase">Nusuk</p>
