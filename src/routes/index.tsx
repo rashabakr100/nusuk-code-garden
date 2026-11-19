@@ -1,10 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Check, Copy, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { canTapToCopy, loadCopied, markCopied, normalizeCode } from "@/lib/copied-codes";
+import {
+  COPY_COOLDOWN_MS,
+  canTapToCopy,
+  getCopyCooldownMs,
+  loadCopied,
+  markCopied,
+  normalizeCode,
+} from "@/lib/copied-codes";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -26,8 +33,25 @@ function Index() {
   const qc = useQueryClient();
   const [value, setValue] = useState("");
   const [copied, setCopied] = useState<Set<string>>(new Set());
+  const [nextCopyAt, setNextCopyAt] = useState(0);
+  const [now, setNow] = useState(0);
+  const nextCopyAtRef = useRef(0);
 
   useEffect(() => setCopied(loadCopied()), []);
+
+  useEffect(() => {
+    if (!nextCopyAt) return;
+
+    const update = () => {
+      const current = Date.now();
+      setNow(current);
+      if (current >= nextCopyAt) setNextCopyAt(0);
+    };
+
+    update();
+    const timer = window.setInterval(update, 100);
+    return () => window.clearInterval(timer);
+  }, [nextCopyAt]);
 
   const { data: codes = [], isLoading } = useQuery({
     queryKey: ["codes"],
@@ -82,14 +106,32 @@ function Index() {
 
   const copy = async (item: Code) => {
     if (!canTapToCopy(copied, item.id)) return;
+
+    const startedAt = Date.now();
+    const remaining = getCopyCooldownMs(nextCopyAtRef.current, startedAt);
+    if (remaining > 0) {
+      toast.error(`انتظر ${Math.ceil(remaining / 1000)} ثوانٍ · Wait ${Math.ceil(remaining / 1000)}s`);
+      return;
+    }
+
+    const until = startedAt + COPY_COOLDOWN_MS;
+    nextCopyAtRef.current = until;
+    setNextCopyAt(until);
+    setNow(startedAt);
+
     try {
       await navigator.clipboard.writeText(item.code);
       setCopied((s) => markCopied(s, item.id));
       toast.success("تم النسخ · Copied");
     } catch {
+      nextCopyAtRef.current = 0;
+      setNextCopyAt(0);
       toast.error("تعذّر النسخ · Couldn't copy");
     }
   };
+
+  const cooldownMs = getCopyCooldownMs(nextCopyAt, now);
+  const cooldownSeconds = Math.ceil(cooldownMs / 1000);
 
   return (
     <main className="min-h-screen bg-background pattern-bg">
@@ -97,7 +139,7 @@ function Index() {
         <header className="text-center">
           <p className="font-display text-sm tracking-[0.3em] text-primary uppercase">Nusuk</p>
           <h1 className="mt-2 font-display text-4xl text-foreground">أكواد إحالة نُسُك</h1>
-          <p className="mt-2 text-muted-foreground">Share your referral code. Tap any code to copy it.</p>
+          <p className="mt-2 text-muted-foreground">Share your referral code. Tap any code to copy it. Wait 3 seconds between copies.</p>
         </header>
 
         <form onSubmit={submit} className="mt-8 flex gap-2 rounded-2xl bg-card p-2 shadow-soft">
@@ -135,11 +177,18 @@ function Index() {
               <button
                 key={c.id}
                 onClick={() => copy(c)}
-                className="flex w-full items-center justify-between rounded-2xl border border-border bg-card p-4 text-left shadow-soft transition active:scale-[0.98]"
+                disabled={cooldownMs > 0}
+                className="flex w-full items-center justify-between rounded-2xl border border-border bg-card p-4 text-left shadow-soft transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
               >
                 <span className="break-all font-mono text-xl text-foreground">{c.code}</span>
                 <span className="ml-3 inline-flex shrink-0 items-center gap-1 text-sm text-primary">
-                  <Copy className="h-4 w-4" /> Copy
+                  {cooldownMs > 0 ? (
+                    `Wait ${cooldownSeconds}s`
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" /> Copy
+                    </>
+                  )}
                 </span>
               </button>
             );

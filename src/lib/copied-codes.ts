@@ -25,3 +25,10 @@ export function canTapToCopy(copied: Set<string>, id: string) {
 export function normalizeCode(raw: string) {
   return raw.trim();
 }
+
+export const COPY_COOLDOWN_MS = 3000;
+
+/** Milliseconds this visitor must wait before tapping to copy another code. */
+export function getCopyCooldownMs(nextCopyAt: number, now: number) {
+  return Math.max(0, nextCopyAt - now);
+}

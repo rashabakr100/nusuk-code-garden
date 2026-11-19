@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { canTapToCopy, loadCopied, markCopied } from "@/lib/copied-codes";
+import { COPY_COOLDOWN_MS, canTapToCopy, getCopyCooldownMs, loadCopied, markCopied } from "@/lib/copied-codes";
 
 describe("copied codes", () => {
   beforeEach(() => localStorage.clear());
@@ -14,5 +14,13 @@ describe("copied codes", () => {
   it("copied state is remembered on this device", () => {
     markCopied(new Set(), "a");
     expect(loadCopied().has("a")).toBe(true);
+  });
+  it("requires a three-second wait before another code can be copied", () => {
+    const firstCopyAt = 1000;
+    const nextCopyAt = firstCopyAt + COPY_COOLDOWN_MS;
+    expect(COPY_COOLDOWN_MS).toBe(3000);
+    expect(getCopyCooldownMs(nextCopyAt, firstCopyAt)).toBe(3000);
+    expect(getCopyCooldownMs(nextCopyAt, firstCopyAt + 2999)).toBe(1);
+    expect(getCopyCooldownMs(nextCopyAt, firstCopyAt + 3000)).toBe(0);
   });
 });
