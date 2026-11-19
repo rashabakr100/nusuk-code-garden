@@ -14,21 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
+      code_owner_tokens: {
+        Row: {
+          code_id: string
+          token: string
+        }
+        Insert: {
+          code_id: string
+          token: string
+        }
+        Update: {
+          code_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "code_owner_tokens_code_id_fkey"
+            columns: ["code_id"]
+            isOneToOne: true
+            referencedRelation: "referral_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       referral_codes: {
         Row: {
           code: string
           created_at: string
           id: string
+          user_id: string | null
         }
         Insert: {
           code: string
           created_at?: string
           id?: string
+          user_id?: string | null
         }
         Update: {
           code?: string
           created_at?: string
           id?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
         }
         Relationships: []
       }
@@ -37,10 +81,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      add_code: { Args: { _code: string; _token: string }; Returns: string }
+      delete_code_with_token: {
+        Args: { _id: string; _token: string }
+        Returns: boolean
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      update_code_with_token: {
+        Args: { _code: string; _id: string; _token: string }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -167,6 +226,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const

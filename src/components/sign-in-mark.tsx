@@ -1,12 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { LogIn, LogOut } from "lucide-react";
-import { LovableMark } from "@lovable.dev/cloud-auth-js/react";
+import { LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { lovable } from "@/integrations/lovable/index";
 import { supabase } from "@/integrations/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-
-type Account = { email: string | null; name: string | null };
+import type { Account } from "@/hooks/use-account";
 
 function GoogleMark() {
   return (
@@ -31,55 +29,78 @@ function GoogleMark() {
   );
 }
 
-export function SignInMark() {
+const inputClass =
+  "h-9 w-full rounded-lg border border-input bg-background px-2.5 text-sm text-foreground outline-none focus:border-primary";
+
+export function SignInMark({ account }: { account: Account | null }) {
   const [open, setOpen] = useState(false);
-  const [account, setAccount] = useState<Account | null>(null);
-  const [busy, setBusy] = useState<"google" | "lovable" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [checkEmail, setCheckEmail] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-
-    supabase.auth.getSession().then(({ data }) => {
-      const session = data.session;
-      if (alive && session) {
-        setAccount({ email: session.user.email ?? null, name: session.user.user_metadata?.["name"] ?? null });
-      }
-    });
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAccount(
-        session
-          ? { email: session.user.email ?? null, name: session.user.user_metadata?.["name"] ?? null }
-          : null,
-      );
-    });
-
-    return () => {
-      alive = false;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
-
-  const start = async (provider: "google" | "lovable") => {
+  const google = async () => {
     if (busy) return;
-    setBusy(provider);
+    setBusy(true);
     try {
-      const result = await lovable.auth.signInWithOAuth(provider, {
-        redirect_uri: window.location.origin,
-      });
-
+      const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
       if (result.error) {
         toast.error("تعذّر تسجيل الدخول · Couldn't sign in");
         return;
       }
       if (result.redirected) return;
-
       setOpen(false);
       toast.success("تم تسجيل الدخول · Signed in");
     } catch {
       toast.error("تعذّر تسجيل الدخول · Couldn't sign in");
     } finally {
-      setBusy(null);
+      setBusy(false);
+    }
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (mode === "signin") {
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        if (error) {
+          toast.error(
+            error.message.toLowerCase().includes("confirm")
+              ? "أكّد بريدك أولاً · Please confirm your email first"
+              : "البريد أو كلمة السر غير صحيحة · Wrong email or password",
+          );
+          return;
+        }
+        setPassword("");
+        setOpen(false);
+        toast.success("تم تسجيل الدخول · Signed in");
+      } else {
+        if (password.length < 6) {
+          toast.error("كلمة السر 6 أحرف على الأقل · Password must be at least 6 characters");
+          return;
+        }
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: { emailRedirectTo: window.location.origin },
+        });
+        if (error) {
+          toast.error(error.message || "تعذّر إنشاء الحساب · Couldn't create account");
+          return;
+        }
+        setPassword("");
+        if (data.session) {
+          setOpen(false);
+          toast.success("تم إنشاء الحساب · Account created");
+        } else {
+          setCheckEmail(true);
+        }
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -92,7 +113,13 @@ export function SignInMark() {
   const initial = (account?.name || account?.email || "?").trim().charAt(0).toUpperCase();
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setCheckEmail(false);
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -112,6 +139,11 @@ export function SignInMark() {
         {account ? (
           <div className="space-y-2">
             <p className="truncate text-xs text-muted-foreground">{account.email || account.name || "Signed in"}</p>
+            {account.isAdmin && (
+              <p className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-[11px] font-medium text-success-foreground">
+                <ShieldCheck className="h-3 w-3" /> Admin · مشرف
+              </p>
+            )}
             <button
               type="button"
               onClick={signOut}
@@ -120,14 +152,33 @@ export function SignInMark() {
               <LogOut className="h-3.5 w-3.5" /> Sign out
             </button>
           </div>
+        ) : checkEmail ? (
+          <div className="space-y-2 text-center">
+            <p className="text-sm font-medium text-foreground">تحقّق من بريدك · Check your email</p>
+            <p className="text-xs text-muted-foreground">
+              We sent a confirmation link. Open it, then sign in.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setCheckEmail(false);
+                setMode("signin");
+              }}
+              className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+            >
+              Back to sign in
+            </button>
+          </div>
         ) : (
           <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">Sign in · تسجيل الدخول</p>
+            <p className="text-xs text-muted-foreground">
+              {mode === "signin" ? "Sign in · تسجيل الدخول" : "Create account · حساب جديد"}
+            </p>
 
             <button
               type="button"
-              onClick={() => start("google")}
-              disabled={busy !== null}
+              onClick={google}
+              disabled={busy}
               className="inline-flex w-full items-center rounded-xl text-[14px] font-medium disabled:opacity-60"
               style={{
                 height: 40,
@@ -142,15 +193,46 @@ export function SignInMark() {
               Continue with Google
             </button>
 
+            <div className="flex items-center gap-2 py-0.5 text-[11px] text-muted-foreground">
+              <span className="h-px flex-1 bg-border" /> or · أو <span className="h-px flex-1 bg-border" />
+            </div>
+
+            <form onSubmit={submit} className="space-y-2">
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email · البريد"
+                aria-label="Email"
+                className={inputClass}
+              />
+              <input
+                type="password"
+                required
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password · كلمة السر"
+                aria-label="Password"
+                className={inputClass}
+              />
+              <button
+                type="submit"
+                disabled={busy}
+                className="h-9 w-full rounded-lg bg-primary text-sm font-medium text-primary-foreground disabled:opacity-60"
+              >
+                {mode === "signin" ? "Sign in" : "Create account"}
+              </button>
+            </form>
+
             <button
               type="button"
-              onClick={() => start("lovable")}
-              disabled={busy !== null}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-input bg-background px-3 text-[14px] font-medium text-foreground transition hover:bg-accent disabled:opacity-60"
-              style={{ height: 40 }}
+              onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+              className="w-full text-center text-[11px] text-primary underline-offset-2 hover:underline"
             >
-              <LovableMark className="h-[18px] w-[18px]" />
-              Continue with Lovable
+              {mode === "signin" ? "No account? Create one · حساب جديد" : "Have an account? Sign in"}
             </button>
           </div>
         )}
