@@ -28,3 +28,5 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+- Copied-code state is per device (localStorage), not shared; codes live in public.referral_codes with anon select/insert only — no accounts needed.

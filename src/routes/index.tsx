@@ -1,23 +1,151 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Check, Copy, Plus } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { canTapToCopy, loadCopied, markCopied, normalizeCode } from "@/lib/copied-codes";
 
-// The home route ships no og:image, so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Nusuk Referral Codes — Share & Copy" },
+      { name: "description", content: "Share your Nusuk referral code and copy codes shared by others. Free and open to everyone." },
+      { property: "og:title", content: "Nusuk Referral Codes" },
+      { property: "og:description", content: "Share and copy Nusuk referral codes for free." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
+type Code = { id: string; code: string; created_at: string };
+
 function Index() {
+  const qc = useQueryClient();
+  const [value, setValue] = useState("");
+  const [copied, setCopied] = useState<Set<string>>(new Set());
+
+  useEffect(() => setCopied(loadCopied()), []);
+
+  const { data: codes = [], isLoading } = useQuery({
+    queryKey: ["codes"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("referral_codes")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(1000);
+      if (error) throw error;
+      return data as Code[];
+    },
+  });
+
+  useEffect(() => {
+    const ch = supabase
+      .channel(`codes-${Math.random().toString(36).slice(2)}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "referral_codes" }, () =>
+        qc.invalidateQueries({ queryKey: ["codes"] }),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [qc]);
+
+  const add = useMutation({
+    mutationFn: async (code: string) => {
+      const { error } = await supabase.from("referral_codes").insert({ code });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setValue("");
+      toast.success("تمت إضافة الكود · Code added");
+      qc.invalidateQueries({ queryKey: ["codes"] });
+    },
+    onError: (e: { code?: string }) => {
+      toast.error(e?.code === "23505" ? "هذا الكود موجود بالفعل · Code already shared" : "تعذّر الإضافة · Couldn't add code");
+    },
+  });
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const c = normalizeCode(value);
+    if (!c) return;
+    if (c.length > 64) {
+      toast.error("الكود طويل جدًا · Code is too long");
+      return;
+    }
+    add.mutate(c);
+  };
+
+  const copy = async (item: Code) => {
+    if (!canTapToCopy(copied, item.id)) return;
+    try {
+      await navigator.clipboard.writeText(item.code);
+      setCopied((s) => markCopied(s, item.id));
+      toast.success("تم النسخ · Copied");
+    } catch {
+      toast.error("تعذّر النسخ · Couldn't copy");
+    }
+  };
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
+    <main className="min-h-screen bg-background pattern-bg">
+      <div className="mx-auto max-w-xl px-4 py-10">
+        <header className="text-center">
+          <p className="font-display text-sm tracking-[0.3em] text-primary uppercase">Nusuk</p>
+          <h1 className="mt-2 font-display text-4xl text-foreground">أكواد إحالة نُسُك</h1>
+          <p className="mt-2 text-muted-foreground">Share your referral code. Tap any code to copy it.</p>
+        </header>
+
+        <form onSubmit={submit} className="mt-8 flex gap-2 rounded-2xl bg-card p-2 shadow-soft">
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            maxLength={64}
+            placeholder="أضف كودك · Add your code"
+            className="min-w-0 flex-1 bg-transparent px-3 text-lg text-foreground outline-none placeholder:text-muted-foreground"
+          />
+          <button
+            type="submit"
+            disabled={add.isPending || !value.trim()}
+            className="inline-flex items-center gap-1 rounded-xl bg-primary px-4 py-3 font-medium text-primary-foreground disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" /> Share
+          </button>
+        </form>
+
+        <section className="mt-8 space-y-3">
+          {isLoading && <p className="text-center text-muted-foreground">Loading…</p>}
+          {!isLoading && codes.length === 0 && (
+            <p className="text-center text-muted-foreground">لا توجد أكواد بعد · No codes yet — be the first!</p>
+          )}
+          {codes.map((c) => {
+            const done = copied.has(c.id);
+            return done ? (
+              <div key={c.id} className="flex items-center justify-between rounded-2xl border border-success bg-success-soft p-4">
+                <span className="select-text break-all font-mono text-xl text-success-foreground">{c.code}</span>
+                <span className="ml-3 inline-flex shrink-0 items-center gap-1 text-sm text-success-foreground select-none">
+                  <Check className="h-4 w-4" /> Copied
+                </span>
+              </div>
+            ) : (
+              <button
+                key={c.id}
+                onClick={() => copy(c)}
+                className="flex w-full items-center justify-between rounded-2xl border border-border bg-card p-4 text-left shadow-soft transition active:scale-[0.98]"
+              >
+                <span className="break-all font-mono text-xl text-foreground">{c.code}</span>
+                <span className="ml-3 inline-flex shrink-0 items-center gap-1 text-sm text-primary">
+                  <Copy className="h-4 w-4" /> Copy
+                </span>
+              </button>
+            );
+          })}
+        </section>
+      </div>
+    </main>
   );
 }
