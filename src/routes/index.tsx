@@ -258,7 +258,7 @@ function Index() {
               value={value}
               onChange={(e) => setValue(stripNgPrefix(e.target.value.replace(/\s+/g, "")))}
               maxLength={MAX_CODE_LENGTH - CODE_PREFIX.length}
-              placeholder="أضف كودك · your code"
+              placeholder="كودك · your code"
               aria-label="Your code (after NG-)"
               dir="ltr"
               className="min-w-0 flex-1 bg-transparent pl-0.5 pr-2 font-mono text-lg text-foreground outline-none placeholder:font-sans placeholder:text-muted-foreground"
