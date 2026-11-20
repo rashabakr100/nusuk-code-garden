@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Check, Copy, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Check, CircleCheck, Circle, Copy, ExternalLink, Pencil, Pin, Plus, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { SignInMark } from "@/components/sign-in-mark";
 import { useAccount } from "@/hooks/use-account";
@@ -19,19 +19,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  COPY_COOLDOWN_MS,
-  canTapToCopy,
-  getCopyCooldownMs,
-  loadCopied,
-  markCopied,
-} from "@/lib/copied-codes";
+import { canTapToCopy, loadCopied, markCopied } from "@/lib/copied-codes";
+import { nextCodeToUse, nusukOpenUrl, orderCodes, pinnedRank } from "@/lib/code-order";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Nusuk Referral Codes — Share & Copy" },
-      { name: "description", content: "Share your Nusuk referral code and copy codes shared by others. Free and open to everyone." },
+      { name: "description", content: "Share your Nusuk referral code, then copy or open codes shared by others straight in the Nusuk app. Free and open to everyone." },
       { property: "og:title", content: "Nusuk Referral Codes" },
       { property: "og:description", content: "Share and copy Nusuk referral codes for free." },
       { property: "og:type", content: "website" },
@@ -43,14 +39,28 @@ export const Route = createFileRoute("/")({
 
 type Code = { id: string; code: string; created_at: string; user_id: string | null };
 
+function OpenLink({ item, onOpen, className }: { item: Code; onOpen: (item: Code) => void; className?: string }) {
+  return (
+    <a
+      href={nusukOpenUrl(item.code)}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={() => onOpen(item)}
+      aria-label={`Open ${item.code} in the Nusuk app`}
+      className={cn("inline-flex shrink-0 items-center justify-center gap-1 font-medium", className)}
+    >
+      <ExternalLink className="h-4 w-4" /> Open
+    </a>
+  );
+}
+
 function Index() {
   const qc = useQueryClient();
   const [value, setValue] = useState("");
   const [copied, setCopied] = useState<Set<string>>(new Set());
-  const [nextCopyAt, setNextCopyAt] = useState(0);
-  const [now, setNow] = useState(0);
-  const nextCopyAtRef = useRef(0);
   const account = useAccount();
+  const [managing, setManaging] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [pendingDelete, setPendingDelete] = useState<Code | null>(null);
@@ -61,21 +71,7 @@ function Index() {
     setOwned(loadOwned());
   }, []);
 
-  useEffect(() => {
-    if (!nextCopyAt) return;
-
-    const update = () => {
-      const current = Date.now();
-      setNow(current);
-      if (current >= nextCopyAt) setNextCopyAt(0);
-    };
-
-    update();
-    const timer = window.setInterval(update, 100);
-    return () => window.clearInterval(timer);
-  }, [nextCopyAt]);
-
-  const { data: codes = [], isLoading } = useQuery({
+  const { data: rawCodes = [], isLoading } = useQuery({
     queryKey: ["codes"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -87,6 +83,11 @@ function Index() {
       return data as Code[];
     },
   });
+
+  const codes = useMemo(() => orderCodes(rawCodes), [rawCodes]);
+  const next = nextCodeToUse(codes, copied);
+  const manageable = codes.filter((c) => canManageCode(c, account, owned));
+  const selected = codes.find((c) => c.id === selectedId) ?? null;
 
   useEffect(() => {
     const ch = supabase
@@ -164,6 +165,7 @@ function Index() {
     },
     onSuccess: (id) => {
       setOwned((s) => removeOwned(s, id));
+      setSelectedId(null);
       toast.success("تم حذف الكود · Code deleted");
       qc.invalidateQueries({ queryKey: ["codes"] });
     },
@@ -174,6 +176,12 @@ function Index() {
     },
     onSettled: () => setPendingDelete(null),
   });
+
+  const stopManaging = () => {
+    setManaging(false);
+    setSelectedId(null);
+    setEditingId(null);
+  };
 
   const startEdit = (item: Code) => {
     setEditingId(item.id);
@@ -210,43 +218,29 @@ function Index() {
     add.mutate(c);
   };
 
+  const markUsed = (item: Code) => setCopied((s) => markCopied(s, item.id));
+
   const copy = async (item: Code) => {
     if (!canTapToCopy(copied, item.id)) return;
-
-    const startedAt = Date.now();
-    const remaining = getCopyCooldownMs(nextCopyAtRef.current, startedAt);
-    if (remaining > 0) {
-      toast.error(`انتظر ${Math.ceil(remaining / 1000)} ثوانٍ · Wait ${Math.ceil(remaining / 1000)}s`);
-      return;
-    }
-
-    const until = startedAt + COPY_COOLDOWN_MS;
-    nextCopyAtRef.current = until;
-    setNextCopyAt(until);
-    setNow(startedAt);
-
     try {
       await navigator.clipboard.writeText(item.code);
-      setCopied((s) => markCopied(s, item.id));
+      markUsed(item);
       toast.success("تم النسخ · Copied");
     } catch {
-      nextCopyAtRef.current = 0;
-      setNextCopyAt(0);
       toast.error("تعذّر النسخ · Couldn't copy");
     }
   };
 
-  const cooldownMs = getCopyCooldownMs(nextCopyAt, now);
-  const cooldownSeconds = Math.ceil(cooldownMs / 1000);
-
   return (
     <main className="min-h-screen bg-background pattern-bg">
       <SignInMark account={account} />
-      <div className="mx-auto max-w-xl px-4 py-10">
+      <div className={cn("mx-auto max-w-xl px-4 py-10", managing && "pb-28")}>
         <header className="text-center">
           <p className="font-display text-sm tracking-[0.3em] text-primary uppercase">Nusuk</p>
           <h1 className="mt-2 font-display text-4xl text-foreground">أكواد إحالة نُسُك</h1>
-          <p className="mt-2 text-muted-foreground">Share your referral code (starts with NG-). Tap any code to copy it. Wait 3 seconds between copies.</p>
+          <p className="mt-2 text-muted-foreground">
+            Share your referral code (starts with NG-). Tap a code to copy it, or tap Open to use it in the Nusuk app.
+          </p>
         </header>
 
         <form onSubmit={submit} className="mt-8 flex gap-2 rounded-2xl bg-card p-2 shadow-soft">
@@ -273,6 +267,42 @@ function Index() {
           </button>
         </form>
 
+        {!isLoading && codes.length > 0 && (
+          <section
+            aria-label="Next code"
+            className="mt-6 overflow-hidden rounded-3xl bg-primary p-5 text-primary-foreground shadow-soft"
+          >
+            {next ? (
+              <div key={next.id} className="animate-in fade-in slide-in-from-right-4 duration-300">
+                <p className="text-sm opacity-80">الكود التالي · Next code</p>
+                <p className="mt-1 break-all font-mono text-3xl tracking-wide" dir="ltr">
+                  {next.code}
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => copy(next)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary-foreground py-3 font-medium text-primary transition active:scale-[0.98]"
+                  >
+                    <Copy className="h-4 w-4" /> Copy
+                  </button>
+                  <OpenLink
+                    item={next}
+                    onOpen={markUsed}
+                    className="rounded-xl border border-primary-foreground/40 py-3 transition active:scale-[0.98]"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="py-2 text-center">
+                <CircleCheck className="mx-auto h-8 w-8" />
+                <p className="mt-2 font-medium">استخدمت كل الأكواد · You've used every code</p>
+                <p className="text-sm opacity-80">New codes will show up here.</p>
+              </div>
+            )}
+          </section>
+        )}
+
         <section className="mt-8 space-y-3">
           {isLoading && <p className="text-center text-muted-foreground">Loading…</p>}
           {!isLoading && codes.length === 0 && (
@@ -280,7 +310,10 @@ function Index() {
           )}
           {codes.map((c) => {
             const done = copied.has(c.id);
-            const canManage = canManageCode(c, account, owned);
+            const pinned = pinnedRank(c.code) !== -1;
+            const pinMark = pinned ? (
+              <Pin className={cn("h-3.5 w-3.5 shrink-0 rotate-45", done ? "text-success-foreground" : "text-primary")} aria-label="Pinned" />
+            ) : null;
 
             if (editingId === c.id) {
               return (
@@ -321,64 +354,120 @@ function Index() {
               );
             }
 
-            const actions = canManage ? (
-              <div className="flex shrink-0 items-center gap-1 pr-2">
+            if (managing) {
+              const canManage = canManageCode(c, account, owned);
+              const isSelected = selectedId === c.id;
+              return (
                 <button
+                  key={c.id}
                   type="button"
-                  onClick={() => startEdit(c)}
-                  aria-label="Edit code"
-                  title="Edit · تعديل"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-primary"
+                  disabled={!canManage}
+                  onClick={() => setSelectedId(isSelected ? null : c.id)}
+                  aria-pressed={isSelected}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-3 rounded-2xl border bg-card p-4 text-left transition",
+                    isSelected ? "border-primary ring-2 ring-primary" : "border-border",
+                    !canManage && "opacity-40",
+                  )}
                 >
-                  <Pencil className="h-3.5 w-3.5" />
+                  <span className="flex min-w-0 items-center gap-2">
+                    {pinMark}
+                    <span className="break-all font-mono text-xl text-foreground">{c.code}</span>
+                  </span>
+                  {canManage &&
+                    (isSelected ? (
+                      <CircleCheck className="h-5 w-5 shrink-0 text-primary" />
+                    ) : (
+                      <Circle className="h-5 w-5 shrink-0 text-muted-foreground" />
+                    ))}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setPendingDelete(c)}
-                  aria-label="Delete code"
-                  title="Delete · حذف"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-destructive"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ) : null;
+              );
+            }
 
             return done ? (
-              <div key={c.id} className="flex items-center rounded-2xl border border-success bg-success-soft">
-                <div className="flex min-w-0 flex-1 items-center justify-between p-4">
-                  <span className="select-text break-all font-mono text-xl text-success-foreground">{c.code}</span>
-                  <span className="ml-3 inline-flex shrink-0 items-center gap-1 text-sm text-success-foreground select-none">
+              <div key={c.id} className="flex items-stretch overflow-hidden rounded-2xl border border-success bg-success-soft">
+                <div className="flex min-w-0 flex-1 items-center justify-between gap-2 p-4">
+                  <span className="flex min-w-0 items-center gap-2">
+                    {pinMark}
+                    <span className="select-text break-all font-mono text-xl text-success-foreground">{c.code}</span>
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-1 text-sm text-success-foreground select-none">
                     <Check className="h-4 w-4" /> Copied
                   </span>
                 </div>
-                {actions}
+                <OpenLink item={c} onOpen={markUsed} className="border-l border-success px-4 text-sm text-success-foreground" />
               </div>
             ) : (
-              <div key={c.id} className="flex items-center rounded-2xl border border-border bg-card shadow-soft">
+              <div key={c.id} className="flex items-stretch overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
                 <button
                   type="button"
                   onClick={() => copy(c)}
-                  disabled={cooldownMs > 0}
-                  className="flex min-w-0 flex-1 items-center justify-between rounded-2xl p-4 text-left transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
+                  className="flex min-w-0 flex-1 items-center justify-between gap-2 p-4 text-left transition active:scale-[0.98]"
                 >
-                  <span className="break-all font-mono text-xl text-foreground">{c.code}</span>
-                  <span className="ml-3 inline-flex shrink-0 items-center gap-1 text-sm text-primary">
-                    {cooldownMs > 0 ? (
-                      `Wait ${cooldownSeconds}s`
-                    ) : (
-                      <>
-                        <Copy className="h-4 w-4" /> Copy
-                      </>
-                    )}
+                  <span className="flex min-w-0 items-center gap-2">
+                    {pinMark}
+                    <span className="break-all font-mono text-xl text-foreground">{c.code}</span>
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-1 text-sm text-primary">
+                    <Copy className="h-4 w-4" /> Copy
                   </span>
                 </button>
-                {actions}
+                <OpenLink item={c} onOpen={markUsed} className="border-l border-border px-4 text-sm text-primary" />
               </div>
             );
           })}
         </section>
+
+        {!managing && manageable.length > 0 && (
+          <div className="mt-6 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setManaging(true)}
+              aria-label="Edit your codes"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition hover:text-primary"
+            >
+              <Pencil className="h-3 w-3" /> تعديل · Edit
+            </button>
+          </div>
+        )}
       </div>
+
+      {managing && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 backdrop-blur">
+          <div className="mx-auto flex max-w-xl items-center gap-2 px-4 py-3">
+            <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+              {selected ? (
+                <span className="font-mono text-foreground">{selected.code}</span>
+              ) : (
+                "اختر كودًا · Select a code"
+              )}
+            </p>
+            <button
+              type="button"
+              disabled={!selected}
+              onClick={() => selected && startEdit(selected)}
+              className="inline-flex items-center gap-1 rounded-lg border border-input px-3 py-2 text-sm text-foreground disabled:opacity-40"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </button>
+            <button
+              type="button"
+              disabled={!selected}
+              onClick={() => selected && setPendingDelete(selected)}
+              className="inline-flex items-center gap-1 rounded-lg border border-destructive px-3 py-2 text-sm text-destructive disabled:opacity-40"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </button>
+            <button
+              type="button"
+              onClick={stopManaging}
+              className="inline-flex items-center rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       <AlertDialog open={pendingDelete !== null} onOpenChange={(o) => !o && setPendingDelete(null)}>
         <AlertDialogContent className="max-w-sm rounded-2xl">

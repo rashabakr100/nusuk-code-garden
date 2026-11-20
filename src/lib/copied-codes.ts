@@ -1,5 +1,6 @@
 const KEY = "nusuk-copied-codes";
 
+/** Codes this visitor already used (copied or opened), remembered on this device. */
 export function loadCopied(): Set<string> {
   try {
     return new Set(JSON.parse(localStorage.getItem(KEY) || "[]"));
@@ -17,18 +18,11 @@ export function markCopied(prev: Set<string>, id: string): Set<string> {
   return next;
 }
 
-/** A code can be copied by a single tap only if this visitor hasn't copied it yet. */
+/** A code can be copied by a single tap only if this visitor hasn't used it yet. */
 export function canTapToCopy(copied: Set<string>, id: string) {
   return !copied.has(id);
 }
 
 export function normalizeCode(raw: string) {
   return raw.trim();
-}
-
-export const COPY_COOLDOWN_MS = 3000;
-
-/** Milliseconds this visitor must wait before tapping to copy another code. */
-export function getCopyCooldownMs(nextCopyAt: number, now: number) {
-  return Math.max(0, nextCopyAt - now);
 }
