@@ -2,13 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Check, CircleCheck, Circle, Copy, ExternalLink, Pencil, Pin, Plus, Trash2, X } from "lucide-react";
+import { Check, CircleCheck, Circle, Copy, ExternalLink, Pencil, Plus, Trash2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { SignInMark } from "@/components/sign-in-mark";
 import { useAccount } from "@/hooks/use-account";
 import { canManageCode, manageVia } from "@/lib/code-permissions";
 import { addOwned, getDeviceToken, loadOwned, removeOwned } from "@/lib/device-ownership";
-import { CODE_PREFIX, MAX_CODE_LENGTH, isValidNgCode, stripNgPrefix, toNgCode } from "@/lib/ng-code";
+import { MAX_CODE_LENGTH, cleanTypedCode, isValidNgCode } from "@/lib/ng-code";
+import { copyNow } from "@/lib/clipboard";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { canTapToCopy, loadCopied, markCopied } from "@/lib/copied-codes";
-import { nextCodeToUse, nusukOpenUrl, orderCodes, pinnedRank } from "@/lib/code-order";
+import { nextCodeToUse, nusukOpenUrl, orderCodes } from "@/lib/code-order";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
@@ -46,10 +47,10 @@ function OpenLink({ item, onOpen, className }: { item: Code; onOpen: (item: Code
       target="_blank"
       rel="noopener noreferrer"
       onClick={() => onOpen(item)}
-      aria-label={`Open ${item.code} in the Nusuk app`}
+      aria-label={`Copy ${item.code} and open the Nusuk app`}
       className={cn("inline-flex shrink-0 items-center justify-center gap-1 font-medium", className)}
     >
-      <ExternalLink className="h-4 w-4" /> Open
+      <ExternalLink className="h-4 w-4 shrink-0" /> Copy and open
     </a>
   );
 }
@@ -185,11 +186,11 @@ function Index() {
 
   const startEdit = (item: Code) => {
     setEditingId(item.id);
-    setEditValue(stripNgPrefix(item.code));
+    setEditValue(item.code);
   };
 
   const checkCode = (raw: string) => {
-    const c = toNgCode(raw);
+    const c = cleanTypedCode(raw);
     if (!c) return null;
     if (c.length > MAX_CODE_LENGTH) {
       toast.error("الكود طويل جدًا · Code is too long");
@@ -220,6 +221,11 @@ function Index() {
 
   const markUsed = (item: Code) => setCopied((s) => markCopied(s, item.id));
 
+  const copyAndOpen = (item: Code) => {
+    if (copyNow(item.code)) toast.success("تم النسخ · Copied");
+    markUsed(item);
+  };
+
   const copy = async (item: Code) => {
     if (!canTapToCopy(copied, item.id)) return;
     try {
@@ -239,23 +245,23 @@ function Index() {
           <p className="font-display text-sm tracking-[0.3em] text-primary uppercase">Nusuk</p>
           <h1 className="mt-2 font-display text-4xl text-foreground">أكواد إحالة نُسُك</h1>
           <p className="mt-2 text-muted-foreground">
-            Share your referral code (starts with NG-). Tap a code to copy it, or tap Open to use it in the Nusuk app.
+            Share your referral code (it must start with NG-). Tap a code to copy it, or tap "Copy and open" to copy it and go straight to the Nusuk app.
           </p>
         </header>
 
         <form onSubmit={submit} className="mt-8 flex gap-2 rounded-2xl bg-card p-2 shadow-soft">
           <label className="flex min-w-0 flex-1 items-center pl-3">
-            <span className="select-none font-mono text-lg text-primary" dir="ltr">
-              {CODE_PREFIX}
-            </span>
             <input
               value={value}
-              onChange={(e) => setValue(stripNgPrefix(e.target.value.replace(/\s+/g, "")))}
-              maxLength={MAX_CODE_LENGTH - CODE_PREFIX.length}
-              placeholder="كودك · your code"
-              aria-label="Your code (after NG-)"
+              onChange={(e) => setValue(e.target.value.replace(/\s+/g, ""))}
+              maxLength={MAX_CODE_LENGTH}
+              placeholder="NG-… · كودك"
+              aria-label="Your code (starts with NG-)"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
               dir="ltr"
-              className="min-w-0 flex-1 bg-transparent pl-0.5 pr-2 font-mono text-lg text-foreground outline-none placeholder:font-sans placeholder:text-muted-foreground"
+              className="min-w-0 flex-1 bg-transparent pr-2 font-mono text-lg text-foreground outline-none placeholder:font-sans placeholder:text-muted-foreground"
             />
           </label>
           <button
@@ -288,7 +294,7 @@ function Index() {
                   </button>
                   <OpenLink
                     item={next}
-                    onOpen={markUsed}
+                    onOpen={copyAndOpen}
                     className="rounded-xl border border-primary-foreground/40 py-3 transition active:scale-[0.98]"
                   />
                 </div>
@@ -310,10 +316,6 @@ function Index() {
           )}
           {codes.map((c) => {
             const done = copied.has(c.id);
-            const pinned = pinnedRank(c.code) !== -1;
-            const pinMark = pinned ? (
-              <Pin className={cn("h-3.5 w-3.5 shrink-0 rotate-45", done ? "text-success-foreground" : "text-primary")} aria-label="Pinned" />
-            ) : null;
 
             if (editingId === c.id) {
               return (
@@ -322,17 +324,17 @@ function Index() {
                   onSubmit={saveEdit}
                   className="flex items-center gap-2 rounded-2xl border border-primary bg-card p-2 shadow-soft"
                 >
-                  <span className="select-none pl-2 font-mono text-xl text-primary" dir="ltr">
-                    {CODE_PREFIX}
-                  </span>
                   <input
                     autoFocus
                     value={editValue}
-                    onChange={(e) => setEditValue(stripNgPrefix(e.target.value.replace(/\s+/g, "")))}
-                    maxLength={MAX_CODE_LENGTH - CODE_PREFIX.length}
-                    aria-label="Edit code (after NG-)"
+                    onChange={(e) => setEditValue(e.target.value.replace(/\s+/g, ""))}
+                    maxLength={MAX_CODE_LENGTH}
+                    aria-label="Edit code (starts with NG-)"
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
                     dir="ltr"
-                    className="-ml-2 min-w-0 flex-1 bg-transparent pr-2 font-mono text-xl text-foreground outline-none"
+                    className="min-w-0 flex-1 pl-2 bg-transparent pr-2 font-mono text-xl text-foreground outline-none"
                   />
                   <button
                     type="submit"
@@ -371,7 +373,6 @@ function Index() {
                   )}
                 >
                   <span className="flex min-w-0 items-center gap-2">
-                    {pinMark}
                     <span className="break-all font-mono text-xl text-foreground">{c.code}</span>
                   </span>
                   {canManage &&
@@ -388,14 +389,13 @@ function Index() {
               <div key={c.id} className="flex items-stretch overflow-hidden rounded-2xl border border-success bg-success-soft">
                 <div className="flex min-w-0 flex-1 items-center justify-between gap-2 p-4">
                   <span className="flex min-w-0 items-center gap-2">
-                    {pinMark}
                     <span className="select-text break-all font-mono text-xl text-success-foreground">{c.code}</span>
                   </span>
                   <span className="inline-flex shrink-0 items-center gap-1 text-sm text-success-foreground select-none">
-                    <Check className="h-4 w-4" /> Used
+                    <Check className="h-4 w-4" /> <span className="hidden sm:inline">Used</span>
                   </span>
                 </div>
-                <OpenLink item={c} onOpen={markUsed} className="border-l border-success px-4 text-sm text-success-foreground" />
+                <OpenLink item={c} onOpen={copyAndOpen} className="flex-col gap-0.5 whitespace-nowrap border-l border-success px-3 text-xs leading-tight text-success-foreground" />
               </div>
             ) : (
               <div key={c.id} className="flex items-stretch overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
@@ -405,14 +405,13 @@ function Index() {
                   className="flex min-w-0 flex-1 items-center justify-between gap-2 p-4 text-left transition active:scale-[0.98]"
                 >
                   <span className="flex min-w-0 items-center gap-2">
-                    {pinMark}
                     <span className="break-all font-mono text-xl text-foreground">{c.code}</span>
                   </span>
                   <span className="inline-flex shrink-0 items-center gap-1 text-sm text-primary">
-                    <Copy className="h-4 w-4" /> Copy
+                    <Copy className="h-4 w-4" /> <span className="hidden sm:inline">Copy</span>
                   </span>
                 </button>
-                <OpenLink item={c} onOpen={markUsed} className="border-l border-border px-4 text-sm text-primary" />
+                <OpenLink item={c} onOpen={copyAndOpen} className="flex-col gap-0.5 whitespace-nowrap border-l border-border px-3 text-xs leading-tight text-primary" />
               </div>
             );
           })}

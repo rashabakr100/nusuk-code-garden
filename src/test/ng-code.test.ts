@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { isValidNgCode, toNgCode } from "@/lib/ng-code";
+import { cleanTypedCode, isValidNgCode } from "@/lib/ng-code";
 
 describe('codes must start with "NG-"', () => {
-  it('adds "NG-" in front of what was typed', () => {
-    expect(toNgCode("kVaLRiYA")).toBe("NG-kVaLRiYA");
+  it('does not add "NG-" for the person — a code typed without it is rejected', () => {
+    expect(cleanTypedCode("kVaLRiYA")).toBe("kVaLRiYA");
+    expect(isValidNgCode(cleanTypedCode("kVaLRiYA"))).toBe(false);
   });
-  it('does not double the prefix when someone pastes a full "NG-" code', () => {
-    expect(toNgCode("NG-kVaLRiYA")).toBe("NG-kVaLRiYA");
-    expect(toNgCode("ng-kVaLRiYA")).toBe("NG-kVaLRiYA");
+  it('accepts a full code typed with "NG-"', () => {
+    expect(cleanTypedCode("NG-kVaLRiYA")).toBe("NG-kVaLRiYA");
+    expect(isValidNgCode(cleanTypedCode("NG-kVaLRiYA"))).toBe(true);
   });
-  it('accepts codes that start with "NG-" followed by the code', () => {
-    expect(isValidNgCode("NG-kVaLRiYA")).toBe(true);
+  it('removes spaces and capitalises a lowercase "ng-" start', () => {
+    expect(cleanTypedCode(" ng-kVaL RiYA ")).toBe("NG-kVaLRiYA");
   });
   it('rejects codes without "NG-" or with nothing after it', () => {
-    expect(isValidNgCode("kVaLRiYA")).toBe(false);
     expect(isValidNgCode("XX-kVaLRiYA")).toBe(false);
     expect(isValidNgCode("NG-")).toBe(false);
     expect(isValidNgCode("NG-ab cd")).toBe(false);

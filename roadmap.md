@@ -10,3 +10,6 @@
 - [x] Pin six codes at the top in a fixed order
 - [x] Open link on every code
 - [x] Small edit icon at the bottom → select a code, then edit or delete
+- [x] Code box: no fixed "NG-" text, reject codes without "NG-"
+- [x] "Open" becomes "Copy and open" (copies the code, then opens the app)
+- [x] Hide pin icons
