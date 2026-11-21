@@ -37,6 +37,41 @@ export type Database = {
           },
         ]
       }
+      code_usage: {
+        Row: {
+          action: string
+          code_id: string
+          created_at: string
+          id: string
+          user_id: string | null
+          visitor_id: string | null
+        }
+        Insert: {
+          action: string
+          code_id: string
+          created_at?: string
+          id?: string
+          user_id?: string | null
+          visitor_id?: string | null
+        }
+        Update: {
+          action?: string
+          code_id?: string
+          created_at?: string
+          id?: string
+          user_id?: string | null
+          visitor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "code_usage_code_id_fkey"
+            columns: ["code_id"]
+            isOneToOne: false
+            referencedRelation: "referral_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       referral_codes: {
         Row: {
           code: string
@@ -76,12 +111,49 @@ export type Database = {
         }
         Relationships: []
       }
+      user_used_codes: {
+        Row: {
+          code_id: string
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          code_id: string
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          code_id?: string
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_used_codes_code_id_fkey"
+            columns: ["code_id"]
+            isOneToOne: false
+            referencedRelation: "referral_codes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
       add_code: { Args: { _code: string; _token: string }; Returns: string }
+      code_usage_summary: {
+        Args: never
+        Returns: {
+          code: string
+          code_id: string
+          copies: number
+          last_used_at: string
+          opens: number
+          people: number
+        }[]
+      }
       delete_code_with_token: {
         Args: { _id: string; _token: string }
         Returns: boolean
@@ -93,6 +165,11 @@ export type Database = {
         }
         Returns: boolean
       }
+      record_code_use: {
+        Args: { _action: string; _code_id: string; _visitor: string }
+        Returns: undefined
+      }
+      sync_used_codes: { Args: { _code_ids: string[] }; Returns: string[] }
       update_code_with_token: {
         Args: { _code: string; _id: string; _token: string }
         Returns: boolean

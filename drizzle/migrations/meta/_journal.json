@@ -22,6 +22,13 @@
       "when": 1795087296901,
       "tag": "0002_device_owner_tokens_and_ng_prefix",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795246828434,
+      "tag": "0003_code_usage_tracking",
+      "breakpoints": true
     }
   ]
 }

@@ -20,7 +20,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { canTapToCopy, loadCopied, markCopied } from "@/lib/copied-codes";
+import { canTapToCopy, loadCopied, markCopied, mergeCopied } from "@/lib/copied-codes";
+import { getVisitorId } from "@/lib/visitor-id";
 import { nextCodeToUse, nusukOpenUrl, orderCodes } from "@/lib/code-order";
 import { cn } from "@/lib/utils";
 
@@ -219,18 +220,35 @@ function Index() {
     add.mutate(c);
   };
 
-  const markUsed = (item: Code) => setCopied((s) => markCopied(s, item.id));
+  const markUsed = (item: Code, action: "copy" | "open") => {
+    setCopied((s) => markCopied(s, item.id));
+    // The request only runs once .then() is called.
+    supabase.rpc("record_code_use", { _code_id: item.id, _action: action, _visitor: getVisitorId() }).then(() => {});
+  };
+
+  // When someone signs in, keep everything they used on this device and add what their account used elsewhere.
+  const accountId = account?.id ?? null;
+  useEffect(() => {
+    if (!accountId) return;
+    let alive = true;
+    supabase.rpc("sync_used_codes", { _code_ids: [...loadCopied()] }).then(({ data }) => {
+      if (alive && data) setCopied((s) => mergeCopied(s, data as string[]));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [accountId]);
 
   const copyAndOpen = (item: Code) => {
     if (copyNow(item.code)) toast.success("تم النسخ · Copied");
-    markUsed(item);
+    markUsed(item, "open");
   };
 
   const copy = async (item: Code) => {
     if (!canTapToCopy(copied, item.id)) return;
     try {
       await navigator.clipboard.writeText(item.code);
-      markUsed(item);
+      markUsed(item, "copy");
       toast.success("تم النسخ · Copied");
     } catch {
       toast.error("تعذّر النسخ · Couldn't copy");
@@ -245,7 +263,7 @@ function Index() {
           <p className="font-display text-sm tracking-[0.3em] text-primary uppercase">Nusuk</p>
           <h1 className="mt-2 font-display text-4xl text-foreground">أكواد إحالة نُسُك</h1>
           <p className="mt-2 text-muted-foreground">
-            Share your referral code (it must start with NG-). Tap a code to copy it, or tap "Copy and open" to copy it and go straight to the Nusuk app.
+            Share your referral code. Tap a code to copy it, or tap "Copy and open" to copy it and go straight to the Nusuk app.
           </p>
         </header>
 
@@ -255,7 +273,7 @@ function Index() {
               value={value}
               onChange={(e) => setValue(e.target.value.replace(/\s+/g, ""))}
               maxLength={MAX_CODE_LENGTH}
-              placeholder="NG-… · كودك"
+              placeholder="كودك · your code"
               aria-label="Your code (starts with NG-)"
               autoCapitalize="characters"
               autoCorrect="off"

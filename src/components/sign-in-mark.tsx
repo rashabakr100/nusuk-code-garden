@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { LogIn, LogOut, ShieldCheck } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { BarChart3, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { lovable } from "@/integrations/lovable/index";
 import { supabase } from "@/integrations/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -143,6 +144,15 @@ export function SignInMark({ account }: { account: Account | null }) {
               <p className="inline-flex items-center gap-1 rounded-full bg-success-soft px-2 py-0.5 text-[11px] font-medium text-success-foreground">
                 <ShieldCheck className="h-3 w-3" /> Admin · مشرف
               </p>
+            )}
+            {account.isAdmin && (
+              <Link
+                to="/admin"
+                onClick={() => setOpen(false)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-medium text-primary-foreground"
+              >
+                <BarChart3 className="h-3.5 w-3.5" /> استخدام الأكواد · Code usage
+              </Link>
             )}
             <button
               type="button"
