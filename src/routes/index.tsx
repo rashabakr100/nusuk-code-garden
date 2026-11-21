@@ -392,7 +392,7 @@ function Index() {
                     <span className="select-text break-all font-mono text-xl text-success-foreground">{c.code}</span>
                   </span>
                   <span className="inline-flex shrink-0 items-center gap-1 text-sm text-success-foreground select-none">
-                    <Check className="h-4 w-4" /> Copied
+                    <Check className="h-4 w-4" /> Used
                   </span>
                 </div>
                 <OpenLink item={c} onOpen={markUsed} className="border-l border-success px-4 text-sm text-success-foreground" />

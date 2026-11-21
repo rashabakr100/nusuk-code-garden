@@ -29,6 +29,7 @@ use the editor.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
 
-- Copied-code state is per device (localStorage), not shared; anyone can view and add codes in public.referral_codes without an account.
+- Used-code state (copied or opened) is per device (localStorage), not shared; anyone can view and add codes in public.referral_codes without an account.
+- Pinned code order is a constant in src/lib/code-order.ts applied client-side over the list; the next-code card and the list share that one ordering so they never disagree.
 - Code ownership: signed-in owners (user_id) and admins (public.user_roles via has_role) edit/delete through RLS; visitors own codes via a per-device token stored in the locked code_owner_tokens table and checked only by SECURITY DEFINER RPCs (add_code, update_code_with_token, delete_code_with_token) — tokens must never be readable by clients.
 - Code format is enforced by a DB CHECK constraint and mirrored in src/lib/ng-code.ts; keep both in sync.
