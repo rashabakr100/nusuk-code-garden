@@ -266,7 +266,7 @@ function Index() {
         aria-label={`${availableCount} codes available to use`}
         className="absolute left-3 top-3 z-40 rounded-full border border-border bg-card/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-soft backdrop-blur"
       >
-        <span className="font-mono text-sm text-primary">{isLoading ? "…" : availableCount}</span> متاح للاستخدام · available to use
+        <span className="font-mono text-sm text-primary">{isLoading ? "…" : availableCount}</span> Available
       </div>
       <SignInMark account={account} />
       <div className={cn("mx-auto max-w-xl px-4 py-10", managing && "pb-28")}>
