@@ -13,3 +13,4 @@
 - [x] Code box: no fixed "NG-" text, reject codes without "NG-"
 - [x] "Open" becomes "Copy and open" (copies the code, then opens the app)
 - [x] Hide pin icons
+- [x] Import codes from nusukkeys.xyz every 30 min (add-only, admin sync note + "Sync now")
