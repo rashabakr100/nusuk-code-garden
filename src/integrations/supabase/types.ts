@@ -37,6 +37,39 @@ export type Database = {
           },
         ]
       }
+      code_sync_state: {
+        Row: {
+          consecutive_failures: number
+          id: string
+          last_attempt_at: string | null
+          last_failure_at: string | null
+          last_failure_reason: string | null
+          last_success_added: number
+          last_success_at: string | null
+          last_success_skipped: number
+        }
+        Insert: {
+          consecutive_failures?: number
+          id: string
+          last_attempt_at?: string | null
+          last_failure_at?: string | null
+          last_failure_reason?: string | null
+          last_success_added?: number
+          last_success_at?: string | null
+          last_success_skipped?: number
+        }
+        Update: {
+          consecutive_failures?: number
+          id?: string
+          last_attempt_at?: string | null
+          last_failure_at?: string | null
+          last_failure_reason?: string | null
+          last_success_added?: number
+          last_success_at?: string | null
+          last_success_skipped?: number
+        }
+        Relationships: []
+      }
       code_usage: {
         Row: {
           action: string
@@ -77,18 +110,21 @@ export type Database = {
           code: string
           created_at: string
           id: string
+          source: string | null
           user_id: string | null
         }
         Insert: {
           code: string
           created_at?: string
           id?: string
+          source?: string | null
           user_id?: string | null
         }
         Update: {
           code?: string
           created_at?: string
           id?: string
+          source?: string | null
           user_id?: string | null
         }
         Relationships: []

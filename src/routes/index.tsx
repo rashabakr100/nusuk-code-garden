@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { canTapToCopy, loadCopied, markCopied, mergeCopied } from "@/lib/copied-codes";
 import { getVisitorId } from "@/lib/visitor-id";
-import { nextCodeToUse, nusukOpenUrl, orderCodes } from "@/lib/code-order";
+import { PINNED_CODES, nextCodeToUse, nusukOpenUrl, orderCodes } from "@/lib/code-order";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
@@ -76,13 +76,16 @@ function Index() {
   const { data: rawCodes = [], isLoading } = useQuery({
     queryKey: ["codes"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("referral_codes")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(1000);
-      if (error) throw error;
-      return data as Code[];
+      // Pinned codes are fetched on their own so newer (e.g. imported) codes can never push them out of the list.
+      const [latest, pinned] = await Promise.all([
+        supabase.from("referral_codes").select("*").order("created_at", { ascending: false }).limit(1000),
+        supabase.from("referral_codes").select("*").in("code", [...PINNED_CODES]),
+      ]);
+      if (latest.error) throw latest.error;
+      const rows = latest.data as Code[];
+      const have = new Set(rows.map((r) => r.id));
+      for (const r of (pinned.data ?? []) as Code[]) if (!have.has(r.id)) rows.push(r);
+      return rows;
     },
   });
 

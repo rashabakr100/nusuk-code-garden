@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAccount } from "@/hooks/use-account";
 import { orderCodes } from "@/lib/code-order";
+import { syncNusukKeysNow } from "@/lib/nusukkeys-sync.functions";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -71,7 +73,9 @@ function AdminUsage() {
           </p>
         ) : (
           <>
-            <div className="mt-6 grid grid-cols-3 gap-2">
+            <SyncNote />
+
+            <div className="mt-4 grid grid-cols-3 gap-2">
               <Stat label="نسخ · Copies" value={totalCopies} />
               <Stat label="فتح · Opens" value={totalOpens} />
               <Stat label="أكواد · Codes" value={rows.length} />
@@ -132,6 +136,65 @@ function Stat({ label, value }: { label: string; value: number }) {
     <div className="rounded-2xl bg-card p-3 text-center shadow-soft">
       <p className="text-2xl font-semibold tabular-nums text-primary">{value}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function timeAgo(iso: string) {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+/** Quiet admin-only note about the nusukkeys.xyz import, plus a "Sync now" button. */
+function SyncNote() {
+  const qc = useQueryClient();
+  const syncNow = useServerFn(syncNusukKeysNow);
+  const { data: state } = useQuery({
+    queryKey: ["code-sync-state"],
+    queryFn: async () => {
+      const { data } = await supabase.from("code_sync_state").select("*").eq("id", "nusukkeys").maybeSingle();
+      return data;
+    },
+  });
+  const run = useMutation({
+    mutationFn: () => syncNow(),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["code-sync-state"] }),
+  });
+
+  const failedLast =
+    !!state?.last_failure_at && (!state.last_success_at || state.last_failure_at > state.last_success_at);
+
+  let note = "Not synced yet";
+  if (state && failedLast && state.last_failure_at) {
+    note = `Last sync failed ${timeAgo(state.last_failure_at)} (showing existing codes)`;
+    if (state.last_success_at) note += ` · last worked ${timeAgo(state.last_success_at)}`;
+  } else if (state?.last_success_at) {
+    note = `Last sync: ${timeAgo(state.last_success_at)} · ${state.last_success_added} added`;
+  }
+
+  let result: string | null = null;
+  if (run.data?.status === "ok") result = `${run.data.added} added, ${run.data.skipped} skipped`;
+  else if (run.data?.status === "failed") result = "Sync failed — existing codes unchanged";
+  else if (run.error) result = "Sync failed — existing codes unchanged";
+
+  return (
+    <div className="mt-6 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+      <p title={failedLast ? state?.last_failure_reason ?? undefined : undefined}>
+        nusukkeys.xyz · {note}
+        {result && <span className="ms-2 text-foreground">— {result}</span>}
+      </p>
+      <button
+        type="button"
+        onClick={() => run.mutate()}
+        disabled={run.isPending}
+        className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:text-primary disabled:opacity-60"
+      >
+        <RefreshCw className={run.isPending ? "h-3 w-3 animate-spin" : "h-3 w-3"} /> Sync now
+      </button>
     </div>
   );
 }
