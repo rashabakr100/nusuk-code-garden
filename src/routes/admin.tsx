@@ -8,6 +8,8 @@ import { orderCodes } from "@/lib/code-order";
 import { useEffect, useState } from "react";
 import { fetchMoreCodes } from "@/lib/nusukkey-fetch.functions";
 import { MIN_MS_BETWEEN_RUNS } from "@/lib/nusukkey-import";
+import { bulkImportCodes, type BulkResult } from "@/lib/bulk-import.functions";
+import { MAX_BULK_NEW, MAX_BULK_TEXT } from "@/lib/bulk-import";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -76,6 +78,7 @@ function AdminUsage() {
         ) : (
           <>
             <FetchCodes />
+            <BulkImport />
 
             <div className="mt-4 grid grid-cols-3 gap-2">
               <Stat label="نسخ · Copies" value={totalCopies} />
@@ -229,6 +232,107 @@ function FetchCodes() {
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/** Admin-only "Bulk import": paste any text, preview the codes found, then add only the new ones. */
+function BulkImport() {
+  const qc = useQueryClient();
+  const runBulk = useServerFn(bulkImportCodes);
+  const [text, setText] = useState("");
+  const [preview, setPreview] = useState<Extract<BulkResult, { status: "preview" }> | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const extract = useMutation({
+    mutationFn: () => runBulk({ data: { text, mode: "preview" } }),
+    onMutate: () => {
+      setPreview(null);
+      setMessage(null);
+    },
+    onSuccess: (r) => {
+      if (r.status === "preview") setPreview(r);
+      else if (r.status === "none") setMessage("No codes found");
+      else setMessage("Couldn't read the codes — nothing changed");
+    },
+    onError: () => setMessage("Couldn't read the codes — nothing changed"),
+  });
+
+  const save = useMutation({
+    mutationFn: () => runBulk({ data: { text, mode: "import" } }),
+    onSuccess: (r) => {
+      setPreview(null);
+      if (r.status === "imported") {
+        setMessage(
+          `${r.added} added, ${r.alreadyHad} already had, ${r.ignored} ignored` +
+            (r.overCap > 0 ? ` — ${r.overCap} more not imported (limit ${MAX_BULK_NEW}); paste again to add them` : ""),
+        );
+        setText("");
+        qc.invalidateQueries({ queryKey: ["codes"] });
+        qc.invalidateQueries({ queryKey: ["code-usage"] });
+      } else if (r.status === "none") setMessage("No codes found");
+      else setMessage("Import failed — existing codes unchanged");
+    },
+    onError: () => setMessage("Import failed — existing codes unchanged"),
+  });
+
+  const busy = extract.isPending || save.isPending;
+
+  return (
+    <div className="mt-3 rounded-2xl border border-border bg-card p-3 text-xs text-muted-foreground shadow-soft">
+      <p className="text-foreground">Bulk import</p>
+      <textarea
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          setPreview(null);
+        }}
+        maxLength={MAX_BULK_TEXT}
+        rows={6}
+        placeholder="Paste a post or messages with codes"
+        aria-label="Text with codes to import"
+        spellCheck={false}
+        dir="ltr"
+        className="mt-2 w-full resize-y rounded-lg border border-input bg-background p-2 font-mono text-xs text-foreground outline-none focus:border-primary"
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => extract.mutate()}
+          disabled={busy || !text.trim()}
+          className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:text-primary disabled:opacity-60"
+        >
+          {extract.isPending ? "Extracting…" : "Extract codes"}
+        </button>
+        {preview && preview.newCount > 0 && (
+          <button
+            type="button"
+            onClick={() => save.mutate()}
+            disabled={busy}
+            className="inline-flex items-center gap-1 rounded-lg bg-primary px-2 py-1 text-xs text-primary-foreground disabled:opacity-60"
+          >
+            {save.isPending ? "Importing…" : `Import ${Math.min(preview.newCount, MAX_BULK_NEW)}`}
+          </button>
+        )}
+        {message && <span className="text-foreground">{message}</span>}
+      </div>
+      {preview && (
+        <div className="mt-2 space-y-1">
+          <p className="text-foreground">
+            {preview.newCount} new · {preview.duplicates} duplicates · {preview.ignored} ignored as invalid
+          </p>
+          {preview.overCap > 0 && (
+            <p className="text-destructive">
+              The text has {preview.newCount} new codes; only the first {MAX_BULK_NEW} will be imported this time.
+            </p>
+          )}
+          {preview.sample.length > 0 && (
+            <p className="break-all">
+              First new codes: <span className="font-mono text-foreground">{preview.sample.join(", ")}</span>
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

@@ -89,7 +89,7 @@ function Index() {
     },
   });
 
-  const codes = useMemo(() => orderCodes(rawCodes), [rawCodes]);
+  const codes = useMemo(() => orderCodes(rawCodes, copied), [rawCodes, copied]);
   const availableCount = codes.reduce((count, item) => count + (copied.has(item.id) ? 0 : 1), 0);
   const next = nextCodeToUse(codes, copied);
   const manageable = codes.filter((c) => canManageCode(c, account, owned));
