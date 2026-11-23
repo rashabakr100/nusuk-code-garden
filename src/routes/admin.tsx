@@ -5,7 +5,9 @@ import { ArrowLeft, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAccount } from "@/hooks/use-account";
 import { orderCodes } from "@/lib/code-order";
-import { syncNusukKeysNow } from "@/lib/nusukkeys-sync.functions";
+import { useEffect, useState } from "react";
+import { fetchMoreCodes } from "@/lib/nusukkey-fetch.functions";
+import { MIN_MS_BETWEEN_RUNS } from "@/lib/nusukkey-import";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -73,7 +75,7 @@ function AdminUsage() {
           </p>
         ) : (
           <>
-            <SyncNote />
+            <FetchCodes />
 
             <div className="mt-4 grid grid-cols-3 gap-2">
               <Stat label="نسخ · Copies" value={totalCopies} />
@@ -149,52 +151,85 @@ function timeAgo(iso: string) {
   return `${Math.round(hours / 24)} days ago`;
 }
 
-/** Quiet admin-only note about the nusukkeys.xyz import, plus a "Sync now" button. */
-function SyncNote() {
+/** Admin-only "Fetch more codes" button for nusukkey.xyz, plus the last 10 results. */
+function FetchCodes() {
   const qc = useQueryClient();
-  const syncNow = useServerFn(syncNusukKeysNow);
-  const { data: state } = useQuery({
-    queryKey: ["code-sync-state"],
+  const fetchNow = useServerFn(fetchMoreCodes);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const { data: runs = [] } = useQuery({
+    queryKey: ["code-import-runs"],
     queryFn: async () => {
-      const { data } = await supabase.from("code_sync_state").select("*").eq("id", "nusukkeys").maybeSingle();
-      return data;
+      const { data } = await supabase
+        .from("code_import_runs")
+        .select("*")
+        .order("ran_at", { ascending: false })
+        .limit(10);
+      return data ?? [];
     },
   });
   const run = useMutation({
-    mutationFn: () => syncNow(),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["code-sync-state"] }),
+    mutationFn: () => fetchNow(),
+    onMutate: () => setCooldownUntil(Date.now() + MIN_MS_BETWEEN_RUNS),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["code-import-runs"] });
+      qc.invalidateQueries({ queryKey: ["codes"] });
+    },
   });
 
-  const failedLast =
-    !!state?.last_failure_at && (!state.last_success_at || state.last_failure_at > state.last_success_at);
-
-  let note = "Not synced yet";
-  if (state && failedLast && state.last_failure_at) {
-    note = `Last sync failed ${timeAgo(state.last_failure_at)} (showing existing codes)`;
-    if (state.last_success_at) note += ` · last worked ${timeAgo(state.last_success_at)}`;
-  } else if (state?.last_success_at) {
-    note = `Last sync: ${timeAgo(state.last_success_at)} · ${state.last_success_added} added`;
-  }
+  const waiting = cooldownUntil > now;
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [waiting]);
+  useEffect(() => setNow(Date.now()), [cooldownUntil]);
 
   let result: string | null = null;
-  if (run.data?.status === "ok") result = `${run.data.added} added, ${run.data.skipped} skipped`;
-  else if (run.data?.status === "failed") result = "Sync failed — existing codes unchanged";
-  else if (run.error) result = "Sync failed — existing codes unchanged";
+  const d = run.data;
+  if (d?.status === "ok") result = `${d.added} new, ${d.alreadyHad} already had`;
+  else if (d?.status === "too_soon") result = "Please wait 15 seconds between fetches";
+  else if (d?.status === "failed" || run.error) result = "Fetch failed — existing codes unchanged";
+  const sample = d && d.status !== "too_soon" ? d.sample : [];
 
   return (
-    <div className="mt-6 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-      <p title={failedLast ? state?.last_failure_reason ?? undefined : undefined}>
-        nusukkeys.xyz · {note}
-        {result && <span className="ms-2 text-foreground">— {result}</span>}
-      </p>
-      <button
-        type="button"
-        onClick={() => run.mutate()}
-        disabled={run.isPending}
-        className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:text-primary disabled:opacity-60"
-      >
-        <RefreshCw className={run.isPending ? "h-3 w-3 animate-spin" : "h-3 w-3"} /> Sync now
-      </button>
+    <div className="mt-6 rounded-2xl border border-border bg-card p-3 text-xs text-muted-foreground shadow-soft">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p>
+          nusukkey.xyz
+          {result && <span className="ms-2 text-foreground">— {result}</span>}
+        </p>
+        <button
+          type="button"
+          onClick={() => run.mutate()}
+          disabled={run.isPending || waiting}
+          className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:text-primary disabled:opacity-60"
+        >
+          <RefreshCw className={run.isPending ? "h-3 w-3 animate-spin" : "h-3 w-3"} />
+          {waiting && !run.isPending ? `Wait ${Math.ceil((cooldownUntil - now) / 1000)}s` : "Fetch more codes"}
+        </button>
+      </div>
+      {sample.length > 0 && (
+        <p className="mt-2 break-all">
+          First codes read: <span className="font-mono text-foreground">{sample.join(", ")}</span>
+        </p>
+      )}
+      {runs.length > 0 && (
+        <ul className="mt-3 space-y-1 border-t border-border pt-2">
+          {runs.map((r) => (
+            <li key={r.id} title={r.reason ?? undefined}>
+              {timeAgo(r.ran_at)} ·{" "}
+              {r.status === "ok" ? (
+                <span className="text-foreground">
+                  {r.added} new, {r.already_had} already had
+                </span>
+              ) : (
+                <span className="text-destructive">failed{r.reason ? `: ${r.reason}` : ""}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

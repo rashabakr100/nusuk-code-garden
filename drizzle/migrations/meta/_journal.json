@@ -36,6 +36,13 @@
       "when": 1795341505928,
       "tag": "0004_nusukkeys_import",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795434240440,
+      "tag": "0005_nusukkey_fetch_runs",
+      "breakpoints": true
     }
   ]
 }

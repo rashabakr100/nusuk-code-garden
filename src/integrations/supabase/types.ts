@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      code_import_runs: {
+        Row: {
+          added: number
+          already_had: number
+          confirmed: number
+          id: string
+          ran_at: string
+          reason: string | null
+          sample: string[]
+          source: string
+          status: string
+        }
+        Insert: {
+          added?: number
+          already_had?: number
+          confirmed?: number
+          id?: string
+          ran_at?: string
+          reason?: string | null
+          sample?: string[]
+          source: string
+          status: string
+        }
+        Update: {
+          added?: number
+          already_had?: number
+          confirmed?: number
+          id?: string
+          ran_at?: string
+          reason?: string | null
+          sample?: string[]
+          source?: string
+          status?: string
+        }
+        Relationships: []
+      }
       code_owner_tokens: {
         Row: {
           code_id: string

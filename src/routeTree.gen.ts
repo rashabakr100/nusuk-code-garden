@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
-import { Route as ApiPublicJobsSyncNusukkeysRouteImport } from './routes/api/public/jobs/sync-nusukkeys'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -23,41 +22,31 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicJobsSyncNusukkeysRoute =
-  ApiPublicJobsSyncNusukkeysRouteImport.update({
-    id: '/api/public/jobs/sync-nusukkeys',
-    path: '/api/public/jobs/sync-nusukkeys',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
-  '/api/public/jobs/sync-nusukkeys': typeof ApiPublicJobsSyncNusukkeysRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
-  '/api/public/jobs/sync-nusukkeys': typeof ApiPublicJobsSyncNusukkeysRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
-  '/api/public/jobs/sync-nusukkeys': typeof ApiPublicJobsSyncNusukkeysRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/api/public/jobs/sync-nusukkeys'
+  fullPaths: '/' | '/admin'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/api/public/jobs/sync-nusukkeys'
-  id: '__root__' | '/' | '/admin' | '/api/public/jobs/sync-nusukkeys'
+  to: '/' | '/admin'
+  id: '__root__' | '/' | '/admin'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
-  ApiPublicJobsSyncNusukkeysRoute: typeof ApiPublicJobsSyncNusukkeysRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -76,20 +65,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/jobs/sync-nusukkeys': {
-      id: '/api/public/jobs/sync-nusukkeys'
-      path: '/api/public/jobs/sync-nusukkeys'
-      fullPath: '/api/public/jobs/sync-nusukkeys'
-      preLoaderRoute: typeof ApiPublicJobsSyncNusukkeysRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
-  ApiPublicJobsSyncNusukkeysRoute: ApiPublicJobsSyncNusukkeysRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
