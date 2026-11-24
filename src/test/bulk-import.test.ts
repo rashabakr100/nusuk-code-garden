@@ -31,3 +31,32 @@ describe("bulk import: finding codes in pasted text", () => {
     expect(p.overCap).toBe(3);
   });
 });
+
+describe("bulk import: codes glued to other words", () => {
+  it("finds all 3 codes in the copied page text, including one glued after 'Copy'", () => {
+    const text = "NG-Blir2HLi\nCopy\nCopy and open\n\nNG-NoCgZQSf CopyNG-48G29od4\nCopy and open";
+    expect(parsePastedCodes(text).codes).toEqual(["NG-Blir2HLi", "NG-NoCgZQSf", "NG-48G29od4"]);
+  });
+  it("cuts a name stuck after the 8 characters", () => {
+    expect(parsePastedCodes("NG-xejzYNqLFajar").codes).toEqual(["NG-xejzYNqL"]);
+  });
+  it("ordinary words with -ng- never become codes", () => {
+    expect(parsePastedCodes("pending-approval and long-term").codes).toEqual([]);
+  });
+  it("lower-case ng- at the start of a line counts", () => {
+    expect(parsePastedCodes("hello\nng-abcd1234").codes).toEqual(["NG-abcd1234"]);
+  });
+  it("ignores the placeholder and codes shorter than 8 characters", () => {
+    const r = parsePastedCodes("NG-XXXXXXXX NG-abc");
+    expect(r.codes).toEqual([]);
+    expect(r.ignored).toBe(2);
+  });
+  it("pasting the same text twice never creates duplicates", () => {
+    const text = "NG-Blir2HLi NG-NoCgZQSf";
+    const twice = parsePastedCodes(`${text}\n${text}`);
+    expect(twice.codes).toEqual(["NG-Blir2HLi", "NG-NoCgZQSf"]);
+    const again = planBulkImport(twice.codes, new Set(twice.codes));
+    expect(again.toAdd).toEqual([]);
+    expect(again.alreadyHad).toBe(2);
+  });
+});
