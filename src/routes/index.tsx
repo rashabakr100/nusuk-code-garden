@@ -20,7 +20,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { canTapToCopy, loadCopied, markCopied, mergeCopied } from "@/lib/copied-codes";
+import { canTapToCopy, loadCopied, loadCopiedAt, markCopied, mergeCopied, stampCopied } from "@/lib/copied-codes";
 import { getVisitorId } from "@/lib/visitor-id";
 import { PINNED_CODES, nextCodeToUse, nusukOpenUrl, orderCodes } from "@/lib/code-order";
 import { cn } from "@/lib/utils";
@@ -39,7 +39,7 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-type Code = { id: string; code: string; created_at: string; user_id: string | null };
+type Code = { id: string; code: string; created_at: string; user_id: string | null; source: string | null };
 
 function OpenLink({ item, onOpen, className }: { item: Code; onOpen: (item: Code) => void; className?: string }) {
   return (
@@ -67,9 +67,11 @@ function Index() {
   const [editValue, setEditValue] = useState("");
   const [pendingDelete, setPendingDelete] = useState<Code | null>(null);
   const [owned, setOwned] = useState<Set<string>>(new Set());
+  const [copiedAt, setCopiedAt] = useState<Record<string, number>>({});
 
   useEffect(() => {
     setCopied(loadCopied());
+    setCopiedAt(loadCopiedAt());
     setOwned(loadOwned());
   }, []);
 
@@ -89,10 +91,21 @@ function Index() {
     },
   });
 
-  const codes = useMemo(() => orderCodes(rawCodes, copied), [rawCodes, copied]);
+  // This visitor's own codes: added from this device, or with their signed-in account (admins included, only their own).
+  const ownIds = useMemo(() => {
+    const s = new Set(owned);
+    if (account) for (const c of rawCodes) if (c.user_id === account.id) s.add(c.id);
+    return s;
+  }, [owned, account, rawCodes]);
+  const codes = useMemo(
+    () => orderCodes(rawCodes, copied, { copiedAt, own: ownIds }),
+    [rawCodes, copied, copiedAt, ownIds],
+  );
+  // The next-code card uses the normal order (a person's own code is no use to them).
+  const normalOrder = useMemo(() => orderCodes(rawCodes, copied, { copiedAt }), [rawCodes, copied, copiedAt]);
   const availableCount = codes.reduce((count, item) => count + (copied.has(item.id) ? 0 : 1), 0);
   const usedCount = codes.length - availableCount;
-  const next = nextCodeToUse(codes, copied);
+  const next = nextCodeToUse(normalOrder, copied);
   const manageable = codes.filter((c) => canManageCode(c, account, owned));
   const selected = codes.find((c) => c.id === selectedId) ?? null;
 
@@ -227,6 +240,7 @@ function Index() {
 
   const markUsed = (item: Code, action: "copy" | "open") => {
     setCopied((s) => markCopied(s, item.id));
+    setCopiedAt((m) => stampCopied(m, item.id));
     // The request only runs once .then() is called.
     supabase.rpc("record_code_use", { _code_id: item.id, _action: action, _visitor: getVisitorId() }).then(() => {});
   };

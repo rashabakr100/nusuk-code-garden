@@ -25,6 +25,7 @@ export type Database = {
           sample: string[]
           source: string
           status: string
+          trigger: string
         }
         Insert: {
           added?: number
@@ -36,6 +37,7 @@ export type Database = {
           sample?: string[]
           source: string
           status: string
+          trigger?: string
         }
         Update: {
           added?: number
@@ -47,6 +49,7 @@ export type Database = {
           sample?: string[]
           source?: string
           status?: string
+          trigger?: string
         }
         Relationships: []
       }
@@ -75,34 +78,46 @@ export type Database = {
       }
       code_sync_state: {
         Row: {
+          auto_enabled: boolean
           consecutive_failures: number
           id: string
           last_attempt_at: string | null
+          last_auto_at: string | null
           last_failure_at: string | null
           last_failure_reason: string | null
+          last_manual_at: string | null
           last_success_added: number
           last_success_at: string | null
           last_success_skipped: number
+          lock_until: string | null
         }
         Insert: {
+          auto_enabled?: boolean
           consecutive_failures?: number
           id: string
           last_attempt_at?: string | null
+          last_auto_at?: string | null
           last_failure_at?: string | null
           last_failure_reason?: string | null
+          last_manual_at?: string | null
           last_success_added?: number
           last_success_at?: string | null
           last_success_skipped?: number
+          lock_until?: string | null
         }
         Update: {
+          auto_enabled?: boolean
           consecutive_failures?: number
           id?: string
           last_attempt_at?: string | null
+          last_auto_at?: string | null
           last_failure_at?: string | null
           last_failure_reason?: string | null
+          last_manual_at?: string | null
           last_success_added?: number
           last_success_at?: string | null
           last_success_skipped?: number
+          lock_until?: string | null
         }
         Relationships: []
       }
@@ -215,6 +230,7 @@ export type Database = {
     }
     Functions: {
       add_code: { Args: { _code: string; _token: string }; Returns: string }
+      claim_code_fetch: { Args: { _trigger: string }; Returns: string }
       code_usage_summary: {
         Args: never
         Returns: {
@@ -230,6 +246,15 @@ export type Database = {
         Args: { _id: string; _token: string }
         Returns: boolean
       }
+      finish_code_fetch: {
+        Args: {
+          _added: number
+          _ok: boolean
+          _reason: string
+          _skipped: number
+        }
+        Returns: undefined
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -241,6 +266,7 @@ export type Database = {
         Args: { _action: string; _code_id: string; _visitor: string }
         Returns: undefined
       }
+      set_auto_fetch: { Args: { _on: boolean }; Returns: boolean }
       sync_used_codes: { Args: { _code_ids: string[] }; Returns: string[] }
       update_code_with_token: {
         Args: { _code: string; _id: string; _token: string }

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ApiPublicJobsFetchCodesRouteImport } from './routes/api/public/jobs/fetch-codes'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +23,40 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicJobsFetchCodesRoute = ApiPublicJobsFetchCodesRouteImport.update({
+  id: '/api/public/jobs/fetch-codes',
+  path: '/api/public/jobs/fetch-codes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/api/public/jobs/fetch-codes': typeof ApiPublicJobsFetchCodesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/api/public/jobs/fetch-codes': typeof ApiPublicJobsFetchCodesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/api/public/jobs/fetch-codes': typeof ApiPublicJobsFetchCodesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin'
+  fullPaths: '/' | '/admin' | '/api/public/jobs/fetch-codes'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin'
-  id: '__root__' | '/' | '/admin'
+  to: '/' | '/admin' | '/api/public/jobs/fetch-codes'
+  id: '__root__' | '/' | '/admin' | '/api/public/jobs/fetch-codes'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  ApiPublicJobsFetchCodesRoute: typeof ApiPublicJobsFetchCodesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +75,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/jobs/fetch-codes': {
+      id: '/api/public/jobs/fetch-codes'
+      path: '/api/public/jobs/fetch-codes'
+      fullPath: '/api/public/jobs/fetch-codes'
+      preLoaderRoute: typeof ApiPublicJobsFetchCodesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  ApiPublicJobsFetchCodesRoute: ApiPublicJobsFetchCodesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

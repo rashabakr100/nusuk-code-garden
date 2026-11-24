@@ -1,4 +1,5 @@
 const KEY = "nusuk-copied-codes";
+const AT_KEY = "nusuk-copied-at";
 
 /** Codes this visitor already used (copied or opened), remembered on this device. */
 export function loadCopied(): Set<string> {
@@ -7,6 +8,25 @@ export function loadCopied(): Set<string> {
   } catch {
     return new Set();
   }
+}
+
+/** When this visitor used each code (ms since 1970), remembered on this device. */
+export function loadCopiedAt(): Record<string, number> {
+  try {
+    const v = JSON.parse(localStorage.getItem(AT_KEY) || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Remembers when a code was used; returns the updated map. */
+export function stampCopied(prev: Record<string, number>, id: string, now = Date.now()): Record<string, number> {
+  const next = { ...prev, [id]: now };
+  try {
+    localStorage.setItem(AT_KEY, JSON.stringify(next));
+  } catch {}
+  return next;
 }
 
 export function markCopied(prev: Set<string>, id: string): Set<string> {

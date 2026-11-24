@@ -14,3 +14,5 @@
 - [x] "Open" becomes "Copy and open" (copies the code, then opens the app)
 - [x] Hide pin icons
 - [x] Admin "Fetch more codes" button importing from nusukkey.xyz (add-only, no schedule, 15s limit, last 10 results)
+- [ ] Auto-run "Fetch more codes" every 30 min (lock, 6h backoff after 5 failures, admin on/off switch, auto/manual in results)
+- [ ] New list order: pinned, shared, bulk, fetched; copied codes at the bottom by copy time (last copied at the very bottom); own new code on top for its owner

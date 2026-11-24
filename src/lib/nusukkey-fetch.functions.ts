@@ -8,5 +8,5 @@ export const fetchMoreCodes = createServerFn({ method: "POST" })
     const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
     if (!isAdmin) throw new Error("Admins only");
     const { runNusukKeyFetch } = await import("@/lib/nusukkey-fetch.server");
-    return runNusukKeyFetch();
+    return runNusukKeyFetch("manual");
   });

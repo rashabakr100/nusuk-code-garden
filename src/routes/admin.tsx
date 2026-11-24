@@ -171,6 +171,22 @@ function FetchCodes() {
       return data ?? [];
     },
   });
+  const { data: state, refetch: refetchState } = useQuery({
+    queryKey: ["code-sync-state"],
+    queryFn: async () => {
+      const { data } = await supabase.from("code_sync_state").select("auto_enabled").eq("id", "nusukkey").maybeSingle();
+      return data;
+    },
+  });
+  const autoOn = state?.auto_enabled ?? true;
+  const toggleAuto = useMutation({
+    mutationFn: async (on: boolean) => {
+      const { error } = await supabase.rpc("set_auto_fetch", { _on: on });
+      if (error) throw error;
+    },
+    onSettled: () => refetchState(),
+  });
+  const lastAuto = runs.find((r) => r.trigger === "auto");
   const run = useMutation({
     mutationFn: () => fetchNow(),
     onMutate: () => setCooldownUntil(Date.now() + MIN_MS_BETWEEN_RUNS),
@@ -192,8 +208,9 @@ function FetchCodes() {
   const d = run.data;
   if (d?.status === "ok") result = `${d.added} new, ${d.alreadyHad} already had`;
   else if (d?.status === "too_soon") result = "Please wait 15 seconds between fetches";
+  else if (d?.status === "busy") result = "A fetch is already running — try again in a moment";
   else if (d?.status === "failed" || run.error) result = "Fetch failed — existing codes unchanged";
-  const sample = d && d.status !== "too_soon" ? d.sample : [];
+  const sample = d && (d.status === "ok" || d.status === "failed") ? d.sample : [];
 
   return (
     <div className="mt-6 rounded-2xl border border-border bg-card p-3 text-xs text-muted-foreground shadow-soft">
@@ -212,6 +229,28 @@ function FetchCodes() {
           {waiting && !run.isPending ? `Wait ${Math.ceil((cooldownUntil - now) / 1000)}s` : "Fetch more codes"}
         </button>
       </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <p>
+          {autoOn ? "Auto-fetch every 30 min" : "Auto-fetch off"}
+          {autoOn &&
+            lastAuto &&
+            ` · last run: ${timeAgo(lastAuto.ran_at)} · ${
+              lastAuto.status === "ok"
+                ? `${lastAuto.added} new, ${lastAuto.already_had} already had`
+                : "last run failed (showing existing codes)"
+            }`}
+        </p>
+        <label className="inline-flex cursor-pointer items-center gap-1">
+          <input
+            type="checkbox"
+            checked={autoOn}
+            disabled={toggleAuto.isPending || !state}
+            onChange={(e) => toggleAuto.mutate(e.target.checked)}
+            className="h-3 w-3 accent-primary"
+          />
+          Auto
+        </label>
+      </div>
       {sample.length > 0 && (
         <p className="mt-2 break-all">
           First codes read: <span className="font-mono text-foreground">{sample.join(", ")}</span>
@@ -221,7 +260,7 @@ function FetchCodes() {
         <ul className="mt-3 space-y-1 border-t border-border pt-2">
           {runs.map((r) => (
             <li key={r.id} title={r.reason ?? undefined}>
-              {timeAgo(r.ran_at)} ·{" "}
+              {timeAgo(r.ran_at)} · {r.trigger === "auto" ? "auto" : "manual"} ·{" "}
               {r.status === "ok" ? (
                 <span className="text-foreground">
                   {r.added} new, {r.already_had} already had

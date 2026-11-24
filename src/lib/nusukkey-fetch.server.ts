@@ -1,6 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
-  MIN_MS_BETWEEN_RUNS,
   NUSUKKEY_PAGES,
   NUSUKKEY_SOURCE,
   PAUSE_BETWEEN_PAGES_MS,
@@ -9,12 +8,14 @@ import {
   planImport,
 } from "@/lib/nusukkey-import";
 
-const STATE_ID = "nusukkey";
+export type FetchTrigger = "manual" | "auto";
 
 export type FetchResult =
   | { status: "ok"; added: number; alreadyHad: number; confirmed: number; sample: string[] }
   | { status: "failed"; reason: string; sample: string[] }
-  | { status: "too_soon" };
+  | { status: "too_soon" }
+  | { status: "busy" }
+  | { status: "skipped"; reason: "disabled" | "backoff" };
 
 async function fetchPage(url: string) {
   const controller = new AbortController();
@@ -35,31 +36,14 @@ async function fetchPage(url: string) {
   }
 }
 
-/** Claims the run slot in one UPDATE, so two taps within 15 seconds can't both run. */
-async function claimRunSlot(): Promise<boolean> {
-  const now = new Date();
-  const cutoff = new Date(now.getTime() - MIN_MS_BETWEEN_RUNS).toISOString();
-  const { data, error } = await supabaseAdmin
-    .from("code_sync_state")
-    .update({ last_attempt_at: now.toISOString() })
-    .eq("id", STATE_ID)
-    .or(`last_attempt_at.is.null,last_attempt_at.lt.${cutoff}`)
-    .select("id");
-  if (error) throw new Error(`Could not start: ${error.message}`);
-  return (data?.length ?? 0) > 0;
-}
-
-async function record(run: {
-  status: "ok" | "failed";
-  added?: number;
-  alreadyHad?: number;
-  confirmed?: number;
-  sample: string[];
-  reason?: string;
-}) {
+async function record(
+  trigger: FetchTrigger,
+  run: { status: "ok" | "failed"; added?: number; alreadyHad?: number; confirmed?: number; sample: string[]; reason?: string },
+) {
   try {
     await supabaseAdmin.from("code_import_runs").insert({
       source: NUSUKKEY_SOURCE,
+      trigger,
       status: run.status,
       added: run.added ?? 0,
       already_had: run.alreadyHad ?? 0,
@@ -72,13 +56,27 @@ async function record(run: {
   }
 }
 
-/**
- * One "Fetch more codes" run. Only ever INSERTS new codes (ON CONFLICT DO NOTHING):
- * it never edits, hides or deletes any existing code, whatever the source returns. Never throws.
- */
-export async function runNusukKeyFetch(): Promise<FetchResult> {
+async function finish(ok: boolean, added: number, skipped: number, reason: string) {
   try {
-    if (!(await claimRunSlot())) return { status: "too_soon" };
+    await supabaseAdmin.rpc("finish_code_fetch", { _ok: ok, _added: added, _skipped: skipped, _reason: reason });
+  } catch (e) {
+    console.error("[fetch-codes] could not release lock", e);
+  }
+}
+
+/**
+ * One "Fetch more codes" run, from a tap or the 30-minute schedule. One lock (claim_code_fetch) means a tap
+ * and a scheduled run never overlap. Only ever INSERTS new codes (ON CONFLICT DO NOTHING): it never edits,
+ * hides or deletes any existing code, whatever the source returns. Never throws.
+ */
+export async function runNusukKeyFetch(trigger: FetchTrigger = "manual"): Promise<FetchResult> {
+  try {
+    const { data: claim, error } = await supabaseAdmin.rpc("claim_code_fetch", { _trigger: trigger });
+    if (error) throw new Error(`Could not start: ${error.message}`);
+    if (claim === "too_soon") return { status: "too_soon" };
+    if (claim === "busy") return { status: "busy" };
+    if (claim === "disabled" || claim === "backoff") return { status: "skipped", reason: claim };
+    if (claim !== "ok") throw new Error(`Could not start: ${claim}`);
   } catch (e) {
     return { status: "failed", reason: e instanceof Error ? e.message : String(e), sample: [] };
   }
@@ -125,17 +123,14 @@ export async function runNusukKeyFetch(): Promise<FetchResult> {
     }
     const already = alreadyHad + (toAdd.length - added);
 
-    const at = new Date().toISOString();
-    await supabaseAdmin
-      .from("code_sync_state")
-      .update({ last_success_at: at, last_success_added: added, last_success_skipped: already, consecutive_failures: 0 })
-      .eq("id", STATE_ID);
-    await record({ status: "ok", added, alreadyHad: already, confirmed, sample });
+    await finish(true, added, already, "");
+    await record(trigger, { status: "ok", added, alreadyHad: already, confirmed, sample });
     return { status: "ok", added, alreadyHad: already, confirmed, sample };
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     console.error("[fetch-codes] failed:", reason);
-    await record({ status: "failed", sample, reason });
+    await finish(false, 0, 0, reason);
+    await record(trigger, { status: "failed", sample, reason });
     return { status: "failed", reason, sample };
   }
 }
